@@ -6,7 +6,7 @@
     },
     "id": "larry.100lives",
     "name": "100 Lives",
-    "version": "v1.1.0",
+    "version": "v1.2.0",
     "developer": "larry",
     "description": "Gives you extra lives instead of instant death. A lives counter is shown during gameplay.",
     "settings": {
@@ -36,6 +36,18 @@
                 "all": "All obstacles",
                 "hazards-only": "Spikes & saws only"
             }
+        },
+        "rescue-key": {
+            "name": "Rescue Key",
+            "description": "Teleport player to last safe position",
+            "type": "keybind",
+            "default": "B"
+        },
+        "fly-toggle-key": {
+            "name": "Toggle Fly Mode",
+            "description": "Switch between cube and fly mode",
+            "type": "keybind",
+            "default": "M"
         }
     },
     "repository": "https://github.com/DanielTop/gd_mod_lives"

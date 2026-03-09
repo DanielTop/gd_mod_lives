@@ -1,6 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
-#include <Geode/modify/UILayer.hpp>
+#include <Geode/loader/SettingV3.hpp>
 
 using namespace geode::prelude;
 
@@ -16,7 +16,8 @@ bool isProtectAll() {
     return Mod::get()->getSettingValue<std::string>("protection-mode") == "all";
 }
 
-// Free functions that operate on PlayLayer directly
+// ========== Rescue & Fly functions ==========
+
 void doRescuePlayer(PlayLayer* pl) {
     auto player = pl->m_player1;
     if (!player || player->m_isDead) return;
@@ -24,7 +25,6 @@ void doRescuePlayer(PlayLayer* pl) {
     player->m_yVelocity = 0.0;
     player->setRotation(0.f);
 
-    // Find safe Y from our stored tag, or use ground level
     float targetY = 105.f;
     auto safeNode = pl->getChildByTag(9998);
     if (safeNode) {
@@ -32,7 +32,6 @@ void doRescuePlayer(PlayLayer* pl) {
     }
     player->setPositionY(targetY);
 
-    // Show indicator
     auto indicator = pl->getChildByTag(9997);
     if (indicator) {
         auto label = static_cast<CCLabelBMFont*>(indicator);
@@ -51,7 +50,6 @@ void doToggleFlyMode(PlayLayer* pl) {
     auto player = pl->m_player1;
     if (!player || player->m_isDead) return;
 
-    // Check current fly state via tag node
     auto stateNode = pl->getChildByTag(9996);
     bool isFlying = stateNode && stateNode->getPositionX() > 0;
 
@@ -65,7 +63,6 @@ void doToggleFlyMode(PlayLayer* pl) {
 
     player->m_yVelocity = 0.0;
 
-    // Show indicator
     auto indicator = pl->getChildByTag(9997);
     if (indicator) {
         auto label = static_cast<CCLabelBMFont*>(indicator);
@@ -80,26 +77,29 @@ void doToggleFlyMode(PlayLayer* pl) {
     }
 }
 
-// ========== UILayer hook for keybinds ==========
+// ========== Keybind listeners ==========
 
-class $modify(LivesUILayer, UILayer) {
-    void keyDown(cocos2d::enumKeyCodes key, double timestamp) {
-        auto pl = PlayLayer::get();
-        if (pl) {
-            if (key == cocos2d::enumKeyCodes::KEY_B) {
-                doRescuePlayer(pl);
-                return;
+$execute {
+    listenForKeybindSettingPresses("rescue-key",
+        [](Keybind const& keybind, bool down, bool repeat, double timestamp) {
+            if (down && !repeat) {
+                if (auto pl = PlayLayer::get()) {
+                    doRescuePlayer(pl);
+                }
             }
-            if (key == cocos2d::enumKeyCodes::KEY_M) {
-                doToggleFlyMode(pl);
-                return;
-            }
-        }
-        UILayer::keyDown(key, timestamp);
-    }
-};
+        });
 
-// ========== PlayLayer hook for lives system ==========
+    listenForKeybindSettingPresses("fly-toggle-key",
+        [](Keybind const& keybind, bool down, bool repeat, double timestamp) {
+            if (down && !repeat) {
+                if (auto pl = PlayLayer::get()) {
+                    doToggleFlyMode(pl);
+                }
+            }
+        });
+}
+
+// ========== PlayLayer hook ==========
 
 class $modify(LivesPlayLayer, PlayLayer) {
 
@@ -126,7 +126,6 @@ class $modify(LivesPlayLayer, PlayLayer) {
         }
     }
 
-    // Track safe position
     void postUpdate(float dt) {
         PlayLayer::postUpdate(dt);
 
@@ -134,7 +133,6 @@ class $modify(LivesPlayLayer, PlayLayer) {
         if (!player || player->m_isDead) return;
 
         if (player->m_isOnGround) {
-            // Store safe Y in a hidden node
             auto safeNode = this->getChildByTag(9998);
             if (safeNode) {
                 safeNode->setPositionY(player->getPositionY());
@@ -152,7 +150,7 @@ class $modify(LivesPlayLayer, PlayLayer) {
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-        // Lives counter (top right) - tag 9999
+        // Lives counter - tag 9999
         auto label = CCLabelBMFont::create(
             fmt::format("{}", m_fields->lives).c_str(),
             "bigFont.fnt"
@@ -166,7 +164,7 @@ class $modify(LivesPlayLayer, PlayLayer) {
         label->setTag(9999);
         this->addChild(label);
 
-        // Mode indicator (center top) - tag 9997
+        // Mode indicator - tag 9997
         auto modeLabel = CCLabelBMFont::create("", "bigFont.fnt");
         modeLabel->setScale(0.5f);
         modeLabel->setOpacity(0);
@@ -176,16 +174,16 @@ class $modify(LivesPlayLayer, PlayLayer) {
         modeLabel->setTag(9997);
         this->addChild(modeLabel);
 
-        // Hidden node for safe Y position - tag 9998
+        // Safe Y tracker - tag 9998
         auto safeNode = CCNode::create();
         safeNode->setTag(9998);
         safeNode->setPositionY(105.f);
         this->addChild(safeNode);
 
-        // Hidden node for fly mode state - tag 9996
+        // Fly state tracker - tag 9996
         auto stateNode = CCNode::create();
         stateNode->setTag(9996);
-        stateNode->setPositionX(0.f); // 0 = cube, 1 = fly
+        stateNode->setPositionX(0.f);
         this->addChild(stateNode);
 
         return true;
