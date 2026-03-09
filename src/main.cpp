@@ -49,15 +49,29 @@ void doRescuePlayer(PlayLayer* pl) {
 void doToggleFlyMode(PlayLayer* pl) {
     auto player = pl->m_player1;
     if (!player || player->m_isDead) return;
+    auto gjbgl = static_cast<GJBaseGameLayer*>(pl);
 
     auto stateNode = pl->getChildByTag(9996);
     bool isFlying = stateNode && stateNode->getPositionX() > 0;
 
+    // Step 1: Clean up previous mode (critical!)
+    gjbgl->playerWillSwitchMode(player, nullptr);
+
     if (!isFlying) {
-        player->toggleFlyMode(true, false);
+        // Switch to ship (fly) mode
+        player->switchedToMode(GameObjectType::ShipPortal);
+        player->toggleFlyMode(true, true);
         if (stateNode) stateNode->setPositionX(1.f);
     } else {
-        player->toggleFlyMode(false, false);
+        // Switch back to cube mode — disable all modes
+        player->switchedToMode(GameObjectType::CubePortal);
+        player->toggleFlyMode(false, true);
+        player->toggleRollMode(false, true);
+        player->toggleBirdMode(false, true);
+        player->toggleDartMode(false, true);
+        player->toggleRobotMode(false, true);
+        player->toggleSpiderMode(false, true);
+        player->toggleSwingMode(false, true);
         if (stateNode) stateNode->setPositionX(0.f);
     }
 
@@ -140,13 +154,6 @@ class $modify(LivesPlayLayer, PlayLayer) {
             }
         }
 
-        // Force fly mode every frame if toggled on
-        // (GD resets game mode based on level portals each frame)
-        auto stateNode = this->getChildByTag(9996);
-        bool wantFly = stateNode && stateNode->getPositionX() > 0;
-        if (wantFly && !player->m_isShip) {
-            player->toggleFlyMode(true, false);
-        }
     }
 
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
