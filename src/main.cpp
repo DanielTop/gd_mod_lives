@@ -53,22 +53,28 @@ void doToggleFlyMode(PlayLayer* pl) {
     auto stateNode = pl->getChildByTag(9996);
     bool isFlying = stateNode && stateNode->getPositionX() > 0;
 
-    // First: disable ALL modes to clean up
-    player->toggleFlyMode(false, true);
-    player->toggleRollMode(false, true);
-    player->toggleBirdMode(false, true);
-    player->toggleDartMode(false, true);
-    player->toggleRobotMode(false, true);
-    player->toggleSpiderMode(false, true);
-    player->toggleSwingMode(false, true);
+    // Create a dummy portal object — playerWillSwitchMode needs
+    // a real GameObject*, nullptr causes incomplete state transition
+    auto dummyObj = TeleportPortalObject::create("edit_eGameRotBtn_001.png", true);
+    dummyObj->m_cameraIsFreeMode = true;
 
     if (!isFlying) {
-        // Enable ship mode — noEffects=true is critical!
-        // false would play portal transition which hides the sprite
+        // Step 1: toggle the mode (changes sprites and flags)
         player->toggleFlyMode(true, true);
+        // Step 2: fix internal game state (physics, collision, timestamps)
+        pl->playerWillSwitchMode(player, dummyObj);
         if (stateNode) stateNode->setPositionX(1.f);
     } else {
-        // Already disabled all modes above — we're in cube
+        // Disable all modes first
+        player->toggleFlyMode(false, false);
+        player->toggleRollMode(false, false);
+        player->toggleBirdMode(false, false);
+        player->toggleDartMode(false, false);
+        player->toggleRobotMode(false, false);
+        player->toggleSpiderMode(false, false);
+        player->toggleSwingMode(false, false);
+        // Fix internal state
+        pl->playerWillSwitchMode(player, dummyObj);
         if (stateNode) stateNode->setPositionX(0.f);
     }
 
@@ -151,13 +157,6 @@ class $modify(LivesPlayLayer, PlayLayer) {
             }
         }
 
-        // Keep fly mode active if toggled on
-        auto stateNode = this->getChildByTag(9996);
-        if (stateNode && stateNode->getPositionX() > 0) {
-            if (!player->m_isShip) {
-                player->toggleFlyMode(true, true);
-            }
-        }
 
     }
 
