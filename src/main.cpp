@@ -16,14 +16,47 @@ bool isProtectAll() {
     return Mod::get()->getSettingValue<std::string>("protection-mode") == "all";
 }
 
-// ========== Rescue & Fly functions ==========
+float getCheckpointInterval() {
+    return static_cast<float>(Mod::get()->getSettingValue<double>("checkpoint-interval"));
+}
 
-// Global ref for rescue checkpoint (accessed from free function)
+// ========== Game mode definitions ==========
+
+struct GameMode {
+    const char* name;
+    const char* settingKey;
+    int id; // internal index for applyMode
+};
+
+static const GameMode ALL_MODES[] = {
+    {"CUBE",   "mode-cube",   0},
+    {"SHIP",   "mode-ship",   1},
+    {"BALL",   "mode-ball",   2},
+    {"UFO",    "mode-ufo",    3},
+    {"WAVE",   "mode-wave",   4},
+    {"ROBOT",  "mode-robot",  5},
+    {"SPIDER", "mode-spider", 6},
+    {"SWING",  "mode-swing",  7},
+};
+static constexpr int TOTAL_MODES = 8;
+
+// Build list of enabled modes from settings
+std::vector<int> getEnabledModes() {
+    std::vector<int> modes;
+    for (int i = 0; i < TOTAL_MODES; i++) {
+        if (Mod::get()->getSettingValue<bool>(ALL_MODES[i].settingKey)) {
+            modes.push_back(i);
+        }
+    }
+    if (modes.empty()) modes.push_back(0); // at least cube
+    return modes;
+}
+
+// ========== Rescue ==========
+
 static Ref<CheckpointObject> g_safeCheckpoint = nullptr;
 
 void doRescuePlayer(PlayLayer* pl) {
-    // Load from saved checkpoint — restores full game state
-    // (position, velocity, mode, camera, audio, everything)
     if (g_safeCheckpoint) {
         pl->loadFromCheckpoint(g_safeCheckpoint);
     }
@@ -42,9 +75,7 @@ void doRescuePlayer(PlayLayer* pl) {
     }
 }
 
-// Cycle order: Cube(0) -> Ship(1) -> Wave(2) -> UFO(3) -> Swing(4) -> Cube...
-static constexpr int MODE_COUNT = 5;
-static const char* MODE_NAMES[] = {"CUBE", "SHIP", "WAVE", "UFO", "SWING"};
+// ========== Game mode cycling ==========
 
 void disableAllModes(PlayerObject* player) {
     player->toggleFlyMode(false, true);
@@ -56,14 +87,17 @@ void disableAllModes(PlayerObject* player) {
     player->toggleSwingMode(false, true);
 }
 
-void applyMode(PlayerObject* player, int mode) {
+void applyMode(PlayerObject* player, int modeIndex) {
     disableAllModes(player);
-    switch (mode) {
-        case 1: player->toggleFlyMode(true, true); break;   // Ship
-        case 2: player->toggleDartMode(true, true); break;   // Wave
+    switch (modeIndex) {
+        case 1: player->toggleFlyMode(true, true); break;    // Ship
+        case 2: player->toggleRollMode(true, true); break;   // Ball
         case 3: player->toggleBirdMode(true, true); break;   // UFO
-        case 4: player->toggleSwingMode(true, true); break;  // Swing
-        default: break; // 0 = Cube, all modes already disabled
+        case 4: player->toggleDartMode(true, true); break;   // Wave
+        case 5: player->toggleRobotMode(true, true); break;  // Robot
+        case 6: player->toggleSpiderMode(true, true); break; // Spider
+        case 7: player->toggleSwingMode(true, true); break;  // Swing
+        default: break; // 0 = Cube
     }
 }
 
@@ -71,21 +105,32 @@ void doCycleGameMode(PlayLayer* pl) {
     auto player = pl->m_player1;
     if (!player || player->m_isDead) return;
 
-    // Get current mode index from state node
-    auto stateNode = pl->getChildByTag(9996);
-    int currentMode = stateNode ? static_cast<int>(stateNode->getPositionX()) : 0;
-    int nextMode = (currentMode + 1) % MODE_COUNT;
+    auto enabledModes = getEnabledModes();
+    if (enabledModes.size() <= 1) return; // nothing to cycle
 
-    // Create dummy portal for proper state transition
+    // Get current position in cycle
+    auto stateNode = pl->getChildByTag(9996);
+    int currentModeIdx = stateNode ? static_cast<int>(stateNode->getPositionX()) : 0;
+
+    // Find current mode in enabled list, advance to next
+    int posInList = 0;
+    for (int i = 0; i < (int)enabledModes.size(); i++) {
+        if (enabledModes[i] == currentModeIdx) {
+            posInList = i;
+            break;
+        }
+    }
+    int nextPos = (posInList + 1) % enabledModes.size();
+    int nextModeIdx = enabledModes[nextPos];
+
+    // Dummy portal for proper state transition
     auto dummyObj = TeleportPortalObject::create("edit_eGameRotBtn_001.png", true);
     dummyObj->m_cameraIsFreeMode = true;
 
-    // Apply new mode
-    applyMode(player, nextMode);
+    applyMode(player, nextModeIdx);
     pl->playerWillSwitchMode(player, dummyObj);
 
-    // Store state
-    if (stateNode) stateNode->setPositionX(static_cast<float>(nextMode));
+    if (stateNode) stateNode->setPositionX(static_cast<float>(nextModeIdx));
 
     player->m_yVelocity = 0.0;
 
@@ -93,7 +138,7 @@ void doCycleGameMode(PlayLayer* pl) {
     auto indicator = pl->getChildByTag(9997);
     if (indicator) {
         auto label = static_cast<CCLabelBMFont*>(indicator);
-        label->setString(fmt::format("[M] {}", MODE_NAMES[nextMode]).c_str());
+        label->setString(fmt::format("[M] {}", ALL_MODES[nextModeIdx].name).c_str());
         label->setOpacity(255);
         label->stopAllActions();
         label->runAction(CCSequence::create(
@@ -160,9 +205,10 @@ class $modify(LivesPlayLayer, PlayLayer) {
         auto player = m_player1;
         if (!player || player->m_isDead) return;
 
-        // Save checkpoint every 0.5s when player is on ground and alive
+        // Save checkpoint at configurable interval when on ground
         m_fields->checkpointTimer += dt;
-        if (m_fields->checkpointTimer >= 0.5f) {
+        float interval = getCheckpointInterval();
+        if (m_fields->checkpointTimer >= interval) {
             m_fields->checkpointTimer = 0.f;
             if (player->m_isOnGround) {
                 g_safeCheckpoint = this->createCheckpoint();
@@ -177,6 +223,8 @@ class $modify(LivesPlayLayer, PlayLayer) {
 
         m_fields->lives = getMaxLives();
         m_fields->invincible = false;
+        m_fields->checkpointTimer = 0.f;
+        g_safeCheckpoint = nullptr;
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
 
@@ -204,7 +252,7 @@ class $modify(LivesPlayLayer, PlayLayer) {
         modeLabel->setTag(9997);
         this->addChild(modeLabel);
 
-        // Fly state tracker - tag 9996
+        // Mode state tracker - tag 9996
         auto stateNode = CCNode::create();
         stateNode->setTag(9996);
         stateNode->setPositionX(0.f);
