@@ -21,6 +21,9 @@ class $modify(LivesPlayLayer, PlayLayer) {
         int lives = 0;
         bool invincible = false;
         CCLabelBMFont* livesLabel = nullptr;
+        float safeY = 0.f;       // last known safe Y position
+        float groundY = 0.f;     // ground level Y
+        bool hasSafePos = false;
     };
 
     void updateLabel() {
@@ -41,6 +44,48 @@ class $modify(LivesPlayLayer, PlayLayer) {
         }
     }
 
+    // Track safe position every frame
+    void postUpdate(float dt) {
+        PlayLayer::postUpdate(dt);
+
+        auto player = m_player1;
+        if (!player || player->m_isDead) return;
+
+        float y = player->getPositionY();
+        float groundLevel = m_groundLayer ? m_groundLayer->getPositionY() + 105.f : 105.f;
+
+        // Save ground reference
+        m_fields->groundY = groundLevel;
+
+        // Consider position "safe" when player is on ground or
+        // within reasonable screen bounds
+        if (player->m_isOnGround) {
+            m_fields->safeY = y;
+            m_fields->hasSafePos = true;
+        }
+    }
+
+    void stabilizePlayer(PlayerObject* player) {
+        if (!player) return;
+
+        // Reset vertical velocity to stop flying off
+        player->m_yVelocity = 0.0;
+
+        // Clamp Y position to screen bounds
+        float minY = m_fields->groundY > 0 ? m_fields->groundY : 105.f;
+        float maxY = CCDirector::sharedDirector()->getWinSize().height * 3.f;
+        float curY = player->getPositionY();
+
+        if (curY < minY || curY > maxY) {
+            // Teleport to last safe Y, or ground level as fallback
+            float targetY = m_fields->hasSafePos ? m_fields->safeY : minY;
+            player->setPositionY(targetY);
+        }
+
+        // Reset rotation momentum
+        player->setRotation(0.f);
+    }
+
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) {
             return false;
@@ -48,6 +93,7 @@ class $modify(LivesPlayLayer, PlayLayer) {
 
         m_fields->lives = getMaxLives();
         m_fields->invincible = false;
+        m_fields->hasSafePos = false;
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
         auto label = CCLabelBMFont::create(
@@ -79,11 +125,8 @@ class $modify(LivesPlayLayer, PlayLayer) {
         bool shouldProtect = false;
 
         if (isProtectAll()) {
-            // Protect from everything: solids, hazards, slopes,
-            // and even nullptr deaths (block crashes, crushes)
             shouldProtect = true;
         } else {
-            // Only protect from spikes and saws
             if (obj) {
                 auto type = obj->getType();
                 shouldProtect = (type == GameObjectType::Hazard ||
@@ -96,8 +139,11 @@ class $modify(LivesPlayLayer, PlayLayer) {
             return;
         }
 
-        // During invincibility, ignore hits
-        if (m_fields->invincible) return;
+        // During invincibility, ignore hits but still stabilize
+        if (m_fields->invincible) {
+            stabilizePlayer(player);
+            return;
+        }
 
         // Still have lives — survive
         if (m_fields->lives > 1) {
@@ -105,6 +151,9 @@ class $modify(LivesPlayLayer, PlayLayer) {
             updateLabel();
 
             m_fields->invincible = true;
+
+            // Stabilize player position and velocity
+            stabilizePlayer(player);
 
             float invTime = getInvincibilityTime();
 
@@ -152,6 +201,7 @@ class $modify(LivesPlayLayer, PlayLayer) {
     void resetLevel() {
         m_fields->lives = getMaxLives();
         m_fields->invincible = false;
+        m_fields->hasSafePos = false;
         PlayLayer::resetLevel();
         updateLabel();
     }
