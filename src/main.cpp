@@ -1,5 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
+#include <Geode/modify/UILayer.hpp>
 
 using namespace geode::prelude;
 
@@ -15,20 +16,100 @@ bool isProtectAll() {
     return Mod::get()->getSettingValue<std::string>("protection-mode") == "all";
 }
 
+// Free functions that operate on PlayLayer directly
+void doRescuePlayer(PlayLayer* pl) {
+    auto player = pl->m_player1;
+    if (!player || player->m_isDead) return;
+
+    player->m_yVelocity = 0.0;
+    player->setRotation(0.f);
+
+    // Find safe Y from our stored tag, or use ground level
+    float targetY = 105.f;
+    auto safeNode = pl->getChildByTag(9998);
+    if (safeNode) {
+        targetY = safeNode->getPositionY();
+    }
+    player->setPositionY(targetY);
+
+    // Show indicator
+    auto indicator = pl->getChildByTag(9997);
+    if (indicator) {
+        auto label = static_cast<CCLabelBMFont*>(indicator);
+        label->setString("RESCUE!");
+        label->setOpacity(255);
+        label->stopAllActions();
+        label->runAction(CCSequence::create(
+            CCDelayTime::create(1.5f),
+            CCFadeOut::create(0.5f),
+            nullptr
+        ));
+    }
+}
+
+void doToggleFlyMode(PlayLayer* pl) {
+    auto player = pl->m_player1;
+    if (!player || player->m_isDead) return;
+
+    // Check current fly state via tag node
+    auto stateNode = pl->getChildByTag(9996);
+    bool isFlying = stateNode && stateNode->getPositionX() > 0;
+
+    if (!isFlying) {
+        player->toggleFlyMode(true, false);
+        if (stateNode) stateNode->setPositionX(1.f);
+    } else {
+        player->toggleFlyMode(false, false);
+        if (stateNode) stateNode->setPositionX(0.f);
+    }
+
+    player->m_yVelocity = 0.0;
+
+    // Show indicator
+    auto indicator = pl->getChildByTag(9997);
+    if (indicator) {
+        auto label = static_cast<CCLabelBMFont*>(indicator);
+        label->setString(!isFlying ? "[M] FLY" : "[M] CUBE");
+        label->setOpacity(255);
+        label->stopAllActions();
+        label->runAction(CCSequence::create(
+            CCDelayTime::create(1.5f),
+            CCFadeOut::create(0.5f),
+            nullptr
+        ));
+    }
+}
+
+// ========== UILayer hook for keybinds ==========
+
+class $modify(LivesUILayer, UILayer) {
+    void keyDown(cocos2d::enumKeyCodes key, double timestamp) {
+        auto pl = PlayLayer::get();
+        if (pl) {
+            if (key == cocos2d::enumKeyCodes::KEY_B) {
+                doRescuePlayer(pl);
+                return;
+            }
+            if (key == cocos2d::enumKeyCodes::KEY_M) {
+                doToggleFlyMode(pl);
+                return;
+            }
+        }
+        UILayer::keyDown(key, timestamp);
+    }
+};
+
+// ========== PlayLayer hook for lives system ==========
+
 class $modify(LivesPlayLayer, PlayLayer) {
 
     struct Fields {
         int lives = 0;
         bool invincible = false;
-        bool flyMode = false;
-        CCLabelBMFont* livesLabel = nullptr;
-        CCLabelBMFont* modeLabel = nullptr;
-        float safeY = 0.f;
-        bool hasSafePos = false;
     };
 
     void updateLabel() {
-        auto label = m_fields->livesLabel;
+        auto label = static_cast<CCLabelBMFont*>(this->getChildByTag(9999));
         if (!label) return;
 
         label->setString(fmt::format("{}", m_fields->lives).c_str());
@@ -45,66 +126,6 @@ class $modify(LivesPlayLayer, PlayLayer) {
         }
     }
 
-    void showModeIndicator(const char* text) {
-        auto label = m_fields->modeLabel;
-        if (!label) return;
-
-        label->setString(text);
-        label->setOpacity(255);
-        label->stopAllActions();
-        label->runAction(CCSequence::create(
-            CCDelayTime::create(1.5f),
-            CCFadeOut::create(0.5f),
-            nullptr
-        ));
-    }
-
-    void rescuePlayer() {
-        auto player = m_player1;
-        if (!player || player->m_isDead) return;
-
-        // Reset velocity
-        player->m_yVelocity = 0.0;
-
-        // Teleport to safe Y or ground level
-        float groundLevel = 105.f;
-        float targetY = m_fields->hasSafePos ? m_fields->safeY : groundLevel;
-        player->setPositionY(targetY);
-
-        // Reset rotation
-        player->setRotation(0.f);
-
-        // Visual feedback — flash white
-        player->stopActionByTag(44);
-        auto flash = CCSequence::create(
-            CCTintTo::create(0.05f, 255, 255, 255),
-            CCTintTo::create(0.2f, 255, 255, 255),
-            nullptr
-        );
-        flash->setTag(44);
-        player->runAction(flash);
-
-        showModeIndicator("RESCUE!");
-    }
-
-    void toggleFlyMode() {
-        auto player = m_player1;
-        if (!player || player->m_isDead) return;
-
-        m_fields->flyMode = !m_fields->flyMode;
-
-        if (m_fields->flyMode) {
-            player->toggleFlyMode(true, false);
-            showModeIndicator("[M] FLY");
-        } else {
-            player->toggleFlyMode(false, false);
-            showModeIndicator("[M] CUBE");
-        }
-
-        // Reset velocity on mode switch to avoid weird physics
-        player->m_yVelocity = 0.0;
-    }
-
     // Track safe position
     void postUpdate(float dt) {
         PlayLayer::postUpdate(dt);
@@ -113,8 +134,11 @@ class $modify(LivesPlayLayer, PlayLayer) {
         if (!player || player->m_isDead) return;
 
         if (player->m_isOnGround) {
-            m_fields->safeY = player->getPositionY();
-            m_fields->hasSafePos = true;
+            // Store safe Y in a hidden node
+            auto safeNode = this->getChildByTag(9998);
+            if (safeNode) {
+                safeNode->setPositionY(player->getPositionY());
+            }
         }
     }
 
@@ -125,12 +149,10 @@ class $modify(LivesPlayLayer, PlayLayer) {
 
         m_fields->lives = getMaxLives();
         m_fields->invincible = false;
-        m_fields->flyMode = false;
-        m_fields->hasSafePos = false;
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-        // Lives counter (top right)
+        // Lives counter (top right) - tag 9999
         auto label = CCLabelBMFont::create(
             fmt::format("{}", m_fields->lives).c_str(),
             "bigFont.fnt"
@@ -143,45 +165,38 @@ class $modify(LivesPlayLayer, PlayLayer) {
         label->setColor({100, 255, 100});
         label->setTag(9999);
         this->addChild(label);
-        m_fields->livesLabel = label;
 
-        // Mode indicator (center top, fades out)
+        // Mode indicator (center top) - tag 9997
         auto modeLabel = CCLabelBMFont::create("", "bigFont.fnt");
         modeLabel->setScale(0.5f);
         modeLabel->setOpacity(0);
         modeLabel->setPosition({winSize.width / 2, winSize.height - 25});
         modeLabel->setZOrder(1000);
         modeLabel->setColor({255, 255, 255});
+        modeLabel->setTag(9997);
         this->addChild(modeLabel);
-        m_fields->modeLabel = modeLabel;
+
+        // Hidden node for safe Y position - tag 9998
+        auto safeNode = CCNode::create();
+        safeNode->setTag(9998);
+        safeNode->setPositionY(105.f);
+        this->addChild(safeNode);
+
+        // Hidden node for fly mode state - tag 9996
+        auto stateNode = CCNode::create();
+        stateNode->setTag(9996);
+        stateNode->setPositionX(0.f); // 0 = cube, 1 = fly
+        this->addChild(stateNode);
 
         return true;
     }
 
-    void keyDown(cocos2d::enumKeyCodes key, double timestamp) {
-        // B = rescue / teleport to safe position
-        if (key == cocos2d::enumKeyCodes::KEY_B) {
-            rescuePlayer();
-            return;
-        }
-
-        // M = toggle fly/cube mode
-        if (key == cocos2d::enumKeyCodes::KEY_M) {
-            toggleFlyMode();
-            return;
-        }
-
-        PlayLayer::keyDown(key, timestamp);
-    }
-
     void destroyPlayer(PlayerObject* player, GameObject* obj) {
-        // Always let the anticheat spike through
         if (obj == m_anticheatSpike) {
             PlayLayer::destroyPlayer(player, obj);
             return;
         }
 
-        // Determine if this death should be intercepted
         bool shouldProtect = false;
 
         if (isProtectAll()) {
@@ -199,10 +214,8 @@ class $modify(LivesPlayLayer, PlayLayer) {
             return;
         }
 
-        // During invincibility, ignore hits
         if (m_fields->invincible) return;
 
-        // Still have lives — survive
         if (m_fields->lives > 1) {
             m_fields->lives--;
             updateLabel();
@@ -211,7 +224,6 @@ class $modify(LivesPlayLayer, PlayLayer) {
 
             float invTime = getInvincibilityTime();
 
-            // Blink player
             if (player) {
                 player->stopActionByTag(42);
                 auto blink = CCBlink::create(invTime, 8);
@@ -219,16 +231,15 @@ class $modify(LivesPlayLayer, PlayLayer) {
                 player->runAction(blink);
             }
 
-            // Pulse label
-            if (m_fields->livesLabel) {
-                m_fields->livesLabel->runAction(CCSequence::create(
+            auto livesLabel = this->getChildByTag(9999);
+            if (livesLabel) {
+                livesLabel->runAction(CCSequence::create(
                     CCScaleTo::create(0.1f, 0.55f),
                     CCScaleTo::create(0.15f, 0.4f),
                     nullptr
                 ));
             }
 
-            // End invincibility after delay
             this->stopActionByTag(43);
             auto seq = CCSequence::create(
                 CCDelayTime::create(invTime),
@@ -241,8 +252,6 @@ class $modify(LivesPlayLayer, PlayLayer) {
             return;
         }
 
-        // Out of lives — real death
-        m_fields->livesLabel = nullptr;
         m_fields->invincible = false;
         m_fields->lives = getMaxLives();
         PlayLayer::destroyPlayer(player, obj);
@@ -255,15 +264,15 @@ class $modify(LivesPlayLayer, PlayLayer) {
     void resetLevel() {
         m_fields->lives = getMaxLives();
         m_fields->invincible = false;
-        m_fields->flyMode = false;
-        m_fields->hasSafePos = false;
+
+        auto stateNode = this->getChildByTag(9996);
+        if (stateNode) stateNode->setPositionX(0.f);
+
         PlayLayer::resetLevel();
         updateLabel();
     }
 
     void onQuit() {
-        m_fields->livesLabel = nullptr;
-        m_fields->modeLabel = nullptr;
         PlayLayer::onQuit();
     }
 };
