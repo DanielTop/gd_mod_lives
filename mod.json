@@ -44,8 +44,8 @@
             "default": "B"
         },
         "fly-toggle-key": {
-            "name": "Toggle Fly Mode",
-            "description": "Switch between cube and fly mode",
+            "name": "Cycle Game Mode",
+            "description": "Cycle: Cube > Ship > Wave > UFO > Swing",
             "type": "keybind",
             "default": "M"
         }

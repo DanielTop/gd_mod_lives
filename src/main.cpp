@@ -46,44 +46,58 @@ void doRescuePlayer(PlayLayer* pl) {
     }
 }
 
-void doToggleFlyMode(PlayLayer* pl) {
+// Cycle order: Cube(0) -> Ship(1) -> Wave(2) -> UFO(3) -> Swing(4) -> Cube...
+static constexpr int MODE_COUNT = 5;
+static const char* MODE_NAMES[] = {"CUBE", "SHIP", "WAVE", "UFO", "SWING"};
+
+void disableAllModes(PlayerObject* player) {
+    player->toggleFlyMode(false, true);
+    player->toggleRollMode(false, true);
+    player->toggleBirdMode(false, true);
+    player->toggleDartMode(false, true);
+    player->toggleRobotMode(false, true);
+    player->toggleSpiderMode(false, true);
+    player->toggleSwingMode(false, true);
+}
+
+void applyMode(PlayerObject* player, int mode) {
+    disableAllModes(player);
+    switch (mode) {
+        case 1: player->toggleFlyMode(true, true); break;   // Ship
+        case 2: player->toggleDartMode(true, true); break;   // Wave
+        case 3: player->toggleBirdMode(true, true); break;   // UFO
+        case 4: player->toggleSwingMode(true, true); break;  // Swing
+        default: break; // 0 = Cube, all modes already disabled
+    }
+}
+
+void doCycleGameMode(PlayLayer* pl) {
     auto player = pl->m_player1;
     if (!player || player->m_isDead) return;
 
+    // Get current mode index from state node
     auto stateNode = pl->getChildByTag(9996);
-    bool isFlying = stateNode && stateNode->getPositionX() > 0;
+    int currentMode = stateNode ? static_cast<int>(stateNode->getPositionX()) : 0;
+    int nextMode = (currentMode + 1) % MODE_COUNT;
 
-    // Create a dummy portal object — playerWillSwitchMode needs
-    // a real GameObject*, nullptr causes incomplete state transition
+    // Create dummy portal for proper state transition
     auto dummyObj = TeleportPortalObject::create("edit_eGameRotBtn_001.png", true);
     dummyObj->m_cameraIsFreeMode = true;
 
-    if (!isFlying) {
-        // Step 1: toggle the mode (changes sprites and flags)
-        player->toggleFlyMode(true, true);
-        // Step 2: fix internal game state (physics, collision, timestamps)
-        pl->playerWillSwitchMode(player, dummyObj);
-        if (stateNode) stateNode->setPositionX(1.f);
-    } else {
-        // Disable all modes first
-        player->toggleFlyMode(false, false);
-        player->toggleRollMode(false, false);
-        player->toggleBirdMode(false, false);
-        player->toggleDartMode(false, false);
-        player->toggleRobotMode(false, false);
-        player->toggleSpiderMode(false, false);
-        player->toggleSwingMode(false, false);
-        // Fix internal state
-        pl->playerWillSwitchMode(player, dummyObj);
-        if (stateNode) stateNode->setPositionX(0.f);
-    }
+    // Apply new mode
+    applyMode(player, nextMode);
+    pl->playerWillSwitchMode(player, dummyObj);
+
+    // Store state
+    if (stateNode) stateNode->setPositionX(static_cast<float>(nextMode));
 
     player->m_yVelocity = 0.0;
 
+    // Show indicator
     auto indicator = pl->getChildByTag(9997);
     if (indicator) {
         auto label = static_cast<CCLabelBMFont*>(indicator);
-        label->setString(!isFlying ? "[M] FLY" : "[M] CUBE");
+        label->setString(fmt::format("[M] {}", MODE_NAMES[nextMode]).c_str());
         label->setOpacity(255);
         label->stopAllActions();
         label->runAction(CCSequence::create(
@@ -110,7 +124,7 @@ $execute {
         [](Keybind const& keybind, bool down, bool repeat, double timestamp) {
             if (down && !repeat) {
                 if (auto pl = PlayLayer::get()) {
-                    doToggleFlyMode(pl);
+                    doCycleGameMode(pl);
                 }
             }
         });
