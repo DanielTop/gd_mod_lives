@@ -1,0 +1,31 @@
+{
+    "geode": "5.3.0",
+    "gd": {
+        "mac": "2.2081",
+        "win": "2.2081"
+    },
+    "id": "larry.100lives",
+    "name": "100 Lives",
+    "version": "v1.0.0",
+    "developer": "larry",
+    "description": "Gives you extra lives instead of instant death. A lives counter is shown during gameplay.",
+    "settings": {
+        "lives-count": {
+            "name": "Number of Lives",
+            "description": "How many lives you get per attempt",
+            "type": "int",
+            "default": 100,
+            "min": 2,
+            "max": 9999
+        },
+        "invincibility-time": {
+            "name": "Invincibility Time",
+            "description": "Seconds of invincibility after each hit",
+            "type": "float",
+            "default": 1.2,
+            "min": 0.3,
+            "max": 5.0
+        }
+    },
+    "repository": "https://github.com/AIDanielTop/100lives"
+}
