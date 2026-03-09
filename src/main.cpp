@@ -18,19 +18,15 @@ bool isProtectAll() {
 
 // ========== Rescue & Fly functions ==========
 
+// Global ref for rescue checkpoint (accessed from free function)
+static Ref<CheckpointObject> g_safeCheckpoint = nullptr;
+
 void doRescuePlayer(PlayLayer* pl) {
-    auto player = pl->m_player1;
-    if (!player || player->m_isDead) return;
-
-    player->m_yVelocity = 0.0;
-    player->setRotation(0.f);
-
-    float targetY = 105.f;
-    auto safeNode = pl->getChildByTag(9998);
-    if (safeNode) {
-        targetY = safeNode->getPositionY();
+    // Load from saved checkpoint — restores full game state
+    // (position, velocity, mode, camera, audio, everything)
+    if (g_safeCheckpoint) {
+        pl->loadFromCheckpoint(g_safeCheckpoint);
     }
-    player->setPositionY(targetY);
 
     auto indicator = pl->getChildByTag(9997);
     if (indicator) {
@@ -137,6 +133,7 @@ class $modify(LivesPlayLayer, PlayLayer) {
     struct Fields {
         int lives = 0;
         bool invincible = false;
+        float checkpointTimer = 0.f;
     };
 
     void updateLabel() {
@@ -163,15 +160,14 @@ class $modify(LivesPlayLayer, PlayLayer) {
         auto player = m_player1;
         if (!player || player->m_isDead) return;
 
-        // Track safe position
-        if (player->m_isOnGround) {
-            auto safeNode = this->getChildByTag(9998);
-            if (safeNode) {
-                safeNode->setPositionY(player->getPositionY());
+        // Save checkpoint every 0.5s when player is on ground and alive
+        m_fields->checkpointTimer += dt;
+        if (m_fields->checkpointTimer >= 0.5f) {
+            m_fields->checkpointTimer = 0.f;
+            if (player->m_isOnGround) {
+                g_safeCheckpoint = this->createCheckpoint();
             }
         }
-
-
     }
 
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
@@ -207,12 +203,6 @@ class $modify(LivesPlayLayer, PlayLayer) {
         modeLabel->setColor({255, 255, 255});
         modeLabel->setTag(9997);
         this->addChild(modeLabel);
-
-        // Safe Y tracker - tag 9998
-        auto safeNode = CCNode::create();
-        safeNode->setTag(9998);
-        safeNode->setPositionY(105.f);
-        this->addChild(safeNode);
 
         // Fly state tracker - tag 9996
         auto stateNode = CCNode::create();
@@ -296,6 +286,8 @@ class $modify(LivesPlayLayer, PlayLayer) {
     void resetLevel() {
         m_fields->lives = getMaxLives();
         m_fields->invincible = false;
+        m_fields->checkpointTimer = 0.f;
+        g_safeCheckpoint = nullptr;
 
         auto stateNode = this->getChildByTag(9996);
         if (stateNode) stateNode->setPositionX(0.f);
