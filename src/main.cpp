@@ -132,11 +132,20 @@ class $modify(LivesPlayLayer, PlayLayer) {
         auto player = m_player1;
         if (!player || player->m_isDead) return;
 
+        // Track safe position
         if (player->m_isOnGround) {
             auto safeNode = this->getChildByTag(9998);
             if (safeNode) {
                 safeNode->setPositionY(player->getPositionY());
             }
+        }
+
+        // Force fly mode every frame if toggled on
+        // (GD resets game mode based on level portals each frame)
+        auto stateNode = this->getChildByTag(9996);
+        bool wantFly = stateNode && stateNode->getPositionX() > 0;
+        if (wantFly && !player->m_isShip) {
+            player->toggleFlyMode(true, false);
         }
     }
 
