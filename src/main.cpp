@@ -75,23 +75,20 @@ class $modify(LivesPlayLayer, PlayLayer) {
             return;
         }
 
-        // No object — boundary death, always lethal
-        if (!obj) {
-            PlayLayer::destroyPlayer(player, obj);
-            return;
-        }
-
         // Determine if this death should be intercepted
         bool shouldProtect = false;
 
         if (isProtectAll()) {
-            // Protect from everything (solids, hazards, slopes, etc.)
+            // Protect from everything: solids, hazards, slopes,
+            // and even nullptr deaths (block crashes, crushes)
             shouldProtect = true;
         } else {
             // Only protect from spikes and saws
-            auto type = obj->getType();
-            shouldProtect = (type == GameObjectType::Hazard ||
-                             type == GameObjectType::AnimatedHazard);
+            if (obj) {
+                auto type = obj->getType();
+                shouldProtect = (type == GameObjectType::Hazard ||
+                                 type == GameObjectType::AnimatedHazard);
+            }
         }
 
         if (!shouldProtect) {
