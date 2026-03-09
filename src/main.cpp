@@ -53,22 +53,22 @@ void doToggleFlyMode(PlayLayer* pl) {
     auto stateNode = pl->getChildByTag(9996);
     bool isFlying = stateNode && stateNode->getPositionX() > 0;
 
+    // First: disable ALL modes to clean up
+    player->toggleFlyMode(false, true);
+    player->toggleRollMode(false, true);
+    player->toggleBirdMode(false, true);
+    player->toggleDartMode(false, true);
+    player->toggleRobotMode(false, true);
+    player->toggleSpiderMode(false, true);
+    player->toggleSwingMode(false, true);
+
     if (!isFlying) {
-        // Switch to ship mode using the same function portals use
-        // type 5 = ShipPortal
-        pl->switchToFlyMode(player, nullptr, true, 5);
+        // Enable ship mode — noEffects=true is critical!
+        // false would play portal transition which hides the sprite
+        player->toggleFlyMode(true, true);
         if (stateNode) stateNode->setPositionX(1.f);
     } else {
-        // Switch back to cube — must clean up then disable all modes
-        pl->playerWillSwitchMode(player, nullptr);
-        player->switchedToMode(GameObjectType::CubePortal);
-        player->toggleFlyMode(false, true);
-        player->toggleRollMode(false, true);
-        player->toggleBirdMode(false, true);
-        player->toggleDartMode(false, true);
-        player->toggleRobotMode(false, true);
-        player->toggleSpiderMode(false, true);
-        player->toggleSwingMode(false, true);
+        // Already disabled all modes above — we're in cube
         if (stateNode) stateNode->setPositionX(0.f);
     }
 
@@ -148,6 +148,14 @@ class $modify(LivesPlayLayer, PlayLayer) {
             auto safeNode = this->getChildByTag(9998);
             if (safeNode) {
                 safeNode->setPositionY(player->getPositionY());
+            }
+        }
+
+        // Keep fly mode active if toggled on
+        auto stateNode = this->getChildByTag(9996);
+        if (stateNode && stateNode->getPositionX() > 0) {
+            if (!player->m_isShip) {
+                player->toggleFlyMode(true, true);
             }
         }
 
