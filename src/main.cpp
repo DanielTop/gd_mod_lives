@@ -49,21 +49,18 @@ void doRescuePlayer(PlayLayer* pl) {
 void doToggleFlyMode(PlayLayer* pl) {
     auto player = pl->m_player1;
     if (!player || player->m_isDead) return;
-    auto gjbgl = static_cast<GJBaseGameLayer*>(pl);
 
     auto stateNode = pl->getChildByTag(9996);
     bool isFlying = stateNode && stateNode->getPositionX() > 0;
 
-    // Step 1: Clean up previous mode (critical!)
-    gjbgl->playerWillSwitchMode(player, nullptr);
-
     if (!isFlying) {
-        // Switch to ship (fly) mode
-        player->switchedToMode(GameObjectType::ShipPortal);
-        player->toggleFlyMode(true, true);
+        // Switch to ship mode using the same function portals use
+        // type 5 = ShipPortal
+        pl->switchToFlyMode(player, nullptr, true, 5);
         if (stateNode) stateNode->setPositionX(1.f);
     } else {
-        // Switch back to cube mode — disable all modes
+        // Switch back to cube — must clean up then disable all modes
+        pl->playerWillSwitchMode(player, nullptr);
         player->switchedToMode(GameObjectType::CubePortal);
         player->toggleFlyMode(false, true);
         player->toggleRollMode(false, true);
