@@ -11,6 +11,10 @@ float getInvincibilityTime() {
     return static_cast<float>(Mod::get()->getSettingValue<double>("invincibility-time"));
 }
 
+bool isProtectAll() {
+    return Mod::get()->getSettingValue<std::string>("protection-mode") == "all";
+}
+
 class $modify(LivesPlayLayer, PlayLayer) {
 
     struct Fields {
@@ -71,23 +75,31 @@ class $modify(LivesPlayLayer, PlayLayer) {
             return;
         }
 
-        // No object — let it through (boundary death etc.)
+        // No object — boundary death, always lethal
         if (!obj) {
             PlayLayer::destroyPlayer(player, obj);
             return;
         }
 
-        // Only intercept actual hazard deaths (spikes, saws)
-        auto type = obj->getType();
-        bool isHazard = (type == GameObjectType::Hazard ||
-                         type == GameObjectType::AnimatedHazard);
+        // Determine if this death should be intercepted
+        bool shouldProtect = false;
 
-        if (!isHazard) {
+        if (isProtectAll()) {
+            // Protect from everything (solids, hazards, slopes, etc.)
+            shouldProtect = true;
+        } else {
+            // Only protect from spikes and saws
+            auto type = obj->getType();
+            shouldProtect = (type == GameObjectType::Hazard ||
+                             type == GameObjectType::AnimatedHazard);
+        }
+
+        if (!shouldProtect) {
             PlayLayer::destroyPlayer(player, obj);
             return;
         }
 
-        // During invincibility, ignore hazard hits
+        // During invincibility, ignore hits
         if (m_fields->invincible) return;
 
         // Still have lives — survive

@@ -6,7 +6,7 @@
     },
     "id": "larry.100lives",
     "name": "100 Lives",
-    "version": "v1.0.0",
+    "version": "v1.1.0",
     "developer": "larry",
     "description": "Gives you extra lives instead of instant death. A lives counter is shown during gameplay.",
     "settings": {
@@ -25,7 +25,18 @@
             "default": 1.2,
             "min": 0.3,
             "max": 5.0
+        },
+        "protection-mode": {
+            "name": "Protection Mode",
+            "description": "What lives protect you from",
+            "type": "string",
+            "default": "all",
+            "one-of": ["all", "hazards-only"],
+            "enum-names": {
+                "all": "All obstacles",
+                "hazards-only": "Spikes & saws only"
+            }
         }
     },
-    "repository": "https://github.com/AIDanielTop/100lives"
+    "repository": "https://github.com/DanielTop/gd_mod_lives"
 }
