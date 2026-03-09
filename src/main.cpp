@@ -54,12 +54,27 @@ std::vector<int> getEnabledModes() {
 
 // ========== Rescue ==========
 
-static Ref<CheckpointObject> g_safeCheckpoint = nullptr;
+struct SafePosition {
+    CCPoint pos = {0.f, 0.f};
+    bool valid = false;
+    bool isGround = false; // was player on ground when saved?
+};
+
+static SafePosition g_safePos;
 
 void doRescuePlayer(PlayLayer* pl) {
-    if (g_safeCheckpoint) {
-        pl->loadFromCheckpoint(g_safeCheckpoint);
-    }
+    if (!g_safePos.valid) return;
+
+    auto player = pl->m_player1;
+    if (!player || player->m_isDead) return;
+
+    // Both required: direct field + virtual method (cocos2d node tree update)
+    player->m_position = g_safePos.pos;
+    player->setPosition(g_safePos.pos);
+    player->setRotation(0.f);
+    player->m_yVelocity = 0.0;
+    player->m_fallSpeed = 0.0;
+    player->m_wasTeleported = true;
 
     auto indicator = pl->getChildByTag(9997);
     if (indicator) {
@@ -205,13 +220,18 @@ class $modify(LivesPlayLayer, PlayLayer) {
         auto player = m_player1;
         if (!player || player->m_isDead) return;
 
-        // Save checkpoint at configurable interval when on ground
+        // Save safe position at configurable interval
+        // Prefer ground positions; if never on ground (ship/wave levels), accept any
         m_fields->checkpointTimer += dt;
         float interval = getCheckpointInterval();
         if (m_fields->checkpointTimer >= interval) {
             m_fields->checkpointTimer = 0.f;
-            if (player->m_isOnGround) {
-                g_safeCheckpoint = this->createCheckpoint();
+            bool onGround = player->m_isOnGround;
+            // Update if: not yet valid, or current is better (ground > air), or same type
+            if (!g_safePos.valid || onGround || !g_safePos.isGround) {
+                g_safePos.pos = player->m_position;
+                g_safePos.valid = true;
+                g_safePos.isGround = onGround;
             }
         }
     }
@@ -224,7 +244,7 @@ class $modify(LivesPlayLayer, PlayLayer) {
         m_fields->lives = getMaxLives();
         m_fields->invincible = false;
         m_fields->checkpointTimer = 0.f;
-        g_safeCheckpoint = nullptr;
+        g_safePos = {};
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
 
@@ -335,7 +355,7 @@ class $modify(LivesPlayLayer, PlayLayer) {
         m_fields->lives = getMaxLives();
         m_fields->invincible = false;
         m_fields->checkpointTimer = 0.f;
-        g_safeCheckpoint = nullptr;
+        g_safePos = {};
 
         auto stateNode = this->getChildByTag(9996);
         if (stateNode) stateNode->setPositionX(0.f);
